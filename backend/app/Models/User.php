@@ -178,4 +178,8 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->role === 'responsable_metier' || str_contains($this->role ?? '', 'responsable_metier');
     }
+    /**
+ * Relation avec les rapports
+ */
+
 }

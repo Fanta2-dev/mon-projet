@@ -5,379 +5,367 @@ namespace App\Http\Controllers;
 use App\Models\Rapport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class RapportController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * 📤 Envoyer un rapport au Chef de Département
      */
-    public function index()
+    public function envoyerAuChefDepartement(Request $request)
     {
         try {
-            $user = Auth::user();
-
-            // Si c'est un chef de département, voir tous les rapports
-            // Si c'est un responsable métier, voir seulement ses rapports
-            $query = Rapport::with('user:id,name,email');
-
-            if ($user->isResponsableMetier()) {
-                $query->where('user_id', $user->id);
-            }
-
-            $rapports = $query->where('statut', '!=', 'brouillon')
-                ->orderBy('created_at', 'desc')
-                ->get()
-                ->map(function ($rapport) {
-                    return [
-                        'id' => $rapport->id,
-                        'metier' => $rapport->metier,
-                        'code_metier' => $rapport->code_metier,
-                        'coordinateur' => $rapport->user->name,
-                        'coordinateur_email' => $rapport->user->email,
-                        'user_id' => $rapport->user_id,
-                        'date_soumission' => $rapport->date_soumission?->format('d/m/Y') ?? $rapport->created_at->format('d/m/Y'),
-                        'periode' => $rapport->periode,
-                        'statistiques' => $rapport->statistiques ?? [],
-                        'justificatifs_traites' => $rapport->justificatifs_traites,
-                        'statut' => $rapport->statut
-                    ];
-                });
-
-            return response()->json([
-                'success' => true,
-                'data' => $rapports
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Erreur lors de la récupération des rapports: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        try {
-            $user = Auth::user();
+            Log::info('=== ENVOI RAPPORT AU CHEF DÉPARTEMENT ===');
+            Log::info('User:', ['id' => Auth::id(), 'name' => Auth::user()->name ?? 'N/A']);
+            Log::info('Données reçues:', $request->all());
 
             $validated = $request->validate([
-                'metier' => 'required|string|max:255',
-                'code_metier' => 'required|string|max:10',
+                'metier' => 'required|string',
+                'code_metier' => 'required|string',
+                'coordinateur' => 'nullable|string',
+                'date_soumission' => 'nullable|string',
+                'periode' => 'required|string',
                 'statistiques' => 'required|array',
-                'periode' => 'required|string|max:255',
-                'justificatifs_traites' => 'required|integer|min:0'
+                'justificatifs_traites' => 'required|integer',
+                'filtres_appliques' => 'nullable|array'
             ]);
 
+            // Créer le rapport avec votre structure de table
             $rapport = Rapport::create([
-                'user_id' => $user->id,
+                'user_id' => Auth::id(),
                 'metier' => $validated['metier'],
                 'code_metier' => $validated['code_metier'],
-                'statistiques' => $validated['statistiques'],
                 'periode' => $validated['periode'],
+                'statistiques' => array_merge($validated['statistiques'], [
+                    'coordinateur' => $validated['coordinateur'] ?? Auth::user()->name,
+                    'filtres_appliques' => $validated['filtres_appliques'] ?? []
+                ]),
                 'justificatifs_traites' => $validated['justificatifs_traites'],
-                'statut' => 'en_attente',
+                'statut' => 'en_attente', // ✅ Correspond à votre enum
                 'date_soumission' => now()
             ]);
 
-            // Charger les relations pour la réponse
-            $rapport->load('user:id,name,email');
+            Log::info('✅ Rapport créé avec succès:', ['id' => $rapport->id]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Rapport créé avec succès',
-                'data' => $rapport
+                'message' => 'Rapport envoyé avec succès au Chef de Département',
+                'data' => [
+                    'id' => $rapport->id,
+                    'statut' => $rapport->statut
+                ]
             ], 201);
 
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('❌ Erreur validation:', $e->errors());
             return response()->json([
                 'success' => false,
-                'error' => 'Erreur lors de la création du rapport: ' . $e->getMessage()
+                'error' => 'Erreur de validation',
+                'details' => $e->errors()
+            ], 422);
+
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur envoi rapport:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Erreur lors de l\'envoi du rapport',
+                'message' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Display the specified resource.
+     * 📥 Récupérer tous les rapports pour le Chef de Département
      */
-    public function show(string $id)
+    public function getRapportsPourChefDepartement(Request $request)
     {
         try {
-            $rapport = Rapport::with('user:id,name,email')->findOrFail($id);
+            Log::info('=== RÉCUPÉRATION RAPPORTS CHEF DÉPARTEMENT ===');
 
-            return response()->json([
-                'success' => true,
-                'data' => $rapport
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Rapport non trouvé'
-            ], 404);
-        }
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        try {
-            $rapport = Rapport::findOrFail($id);
-
-            $validated = $request->validate([
-                'statut' => 'sometimes|string|in:en_attente,valide,rejete'
-            ]);
-
-            $rapport->update($validated);
-            $rapport->load('user:id,name,email');
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Rapport mis à jour avec succès',
-                'data' => $rapport
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Erreur lors de la mise à jour du rapport: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        try {
-            $user = Auth::user();
-            $rapport = Rapport::findOrFail($id);
-
-            // Vérifier que l'utilisateur peut supprimer ce rapport
-            if ($rapport->user_id !== $user->id && !$user->isChefDepartement()) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Non autorisé à supprimer ce rapport'
-                ], 403);
-            }
-
-            $rapport->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Rapport supprimé avec succès'
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Erreur lors de la suppression du rapport'
-            ], 500);
-        }
-    }
-
-    /**
-     * Routes supplémentaires pour la gestion des rapports
-     */
-
-    // Envoyer un rapport au chef de département
-  public function envoyerAuChefDepartement(Request $request)
-{
-    \Log::info('🎯 DEBUT envoyerAuChefDepartement');
-    \Log::info('📦 Données reçues:', $request->all());
-
-    try {
-        $user = Auth::user();
-        \Log::info('👤 Utilisateur:', ['id' => $user->id, 'name' => $user->name]);
-
-        // ✅ CORRECTION : Validation adaptée aux données du frontend
-        $validated = $request->validate([
-            'metier' => 'required|string|max:255',
-            'code_metier' => 'required|string|max:10',
-            'coordinateur' => 'required|string|max:255',
-            'date_soumission' => 'required|date',
-            'periode' => 'required|string|max:255',
-            'statistiques' => 'required|array',
-            'justificatifs_traites' => 'required|integer|min:0',
-            'filtres_appliques' => 'sometimes|array'
-        ]);
-
-        // ✅ CORRECTION : Création directe sans appeler store()
-        $rapport = Rapport::create([
-            'user_id' => $user->id,
-            'metier' => $validated['metier'],
-            'code_metier' => $validated['code_metier'],
-            'statistiques' => $validated['statistiques'],
-            'periode' => $validated['periode'],
-            'justificatifs_traites' => $validated['justificatifs_traites'],
-            'statut' => 'en_attente',
-            'date_soumission' => $validated['date_soumission'] // ✅ Utilise la date du frontend
-        ]);
-
-        $rapport->load('user:id,name,email');
-
-        \Log::info('📄 Rapport créé avec succès', ['id' => $rapport->id]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Rapport envoyé au chef de département avec succès',
-            'data' => $rapport
-        ], 201);
-
-    } catch (\Exception $e) {
-        \Log::error('💥 ERREUR dans envoyerAuChefDepartement:', [
-            'message' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine()
-        ]);
-
-        return response()->json([
-            'success' => false,
-            'error' => 'Erreur lors de l\'envoi du rapport: ' . $e->getMessage()
-        ], 500);
-    }
-}
-    // Récupérer les rapports pour le chef de département
-    public function getRapportsPourChefDepartement()
-    {
-        try {
             $rapports = Rapport::with('user:id,name,email')
-                ->where('statut', '!=', 'brouillon')
+                ->whereIn('statut', ['en_attente', 'valide', 'rejete']) // ✅ Tous les rapports soumis
                 ->orderBy('created_at', 'desc')
                 ->get()
-                ->map(function ($rapport) {
+                ->map(function($rapport) {
+                    $statistiques = $rapport->statistiques;
+
                     return [
                         'id' => $rapport->id,
                         'metier' => $rapport->metier,
                         'code_metier' => $rapport->code_metier,
-                        'coordinateur' => $rapport->user->name,
-                        'coordinateur_email' => $rapport->user->email,
-                        'user_id' => $rapport->user_id,
-                        'date_soumission' => $rapport->date_soumission?->format('d/m/Y') ?? $rapport->created_at->format('d/m/Y'),
+                        'coordinateur' => $statistiques['coordinateur'] ?? $rapport->user->name ?? 'N/A',
+                        'date_soumission' => $rapport->date_soumission ?
+                            $rapport->date_soumission->format('d/m/Y') :
+                            $rapport->created_at->format('d/m/Y'),
                         'periode' => $rapport->periode,
-                        'statistiques' => $rapport->statistiques ?? [],
+                        'statistiques' => $statistiques,
                         'justificatifs_traites' => $rapport->justificatifs_traites,
-                        'statut' => $rapport->statut
+                        'statut' => $this->mapStatut($rapport->statut) // ✅ Conversion du statut
                     ];
                 });
+
+            Log::info('✅ Rapports récupérés:', ['count' => $rapports->count()]);
 
             return response()->json([
                 'success' => true,
                 'data' => $rapports
-            ]);
+            ], 200);
 
         } catch (\Exception $e) {
+            Log::error('❌ Erreur récupération rapports:', [
+                'message' => $e->getMessage()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'error' => 'Erreur lors de la récupération des rapports: ' . $e->getMessage()
+                'error' => 'Erreur lors de la récupération des rapports',
+                'message' => $e->getMessage()
             ], 500);
         }
     }
 
-    // Valider un rapport
+    /**
+     * ✅ Valider un rapport
+     */
     public function validerRapport($id)
     {
         try {
-            $rapport = Rapport::with('user:id,name,email')->findOrFail($id);
+            Log::info('=== VALIDATION RAPPORT ===', ['id' => $id]);
+
+            $rapport = Rapport::findOrFail($id);
             $rapport->update([
                 'statut' => 'valide',
                 'date_validation' => now()
             ]);
 
+            Log::info('✅ Rapport validé');
+
             return response()->json([
                 'success' => true,
-                'message' => 'Rapport validé avec succès',
-                'data' => $rapport
-            ]);
+                'message' => 'Rapport validé avec succès'
+            ], 200);
 
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Erreur lors de la validation du rapport: ' . $e->getMessage()
+                'error' => 'Rapport introuvable'
+            ], 404);
+
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur validation rapport:', [
+                'message' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Erreur lors de la validation'
             ], 500);
         }
     }
 
-    // Rejeter un rapport
+    /**
+     * ❌ Rejeter un rapport
+     */
     public function rejeterRapport($id)
     {
         try {
-            $rapport = Rapport::with('user:id,name,email')->findOrFail($id);
+            Log::info('=== REJET RAPPORT ===', ['id' => $id]);
+
+            $rapport = Rapport::findOrFail($id);
             $rapport->update([
                 'statut' => 'rejete',
                 'date_rejet' => now()
             ]);
 
+            Log::info('✅ Rapport rejeté');
+
             return response()->json([
                 'success' => true,
-                'message' => 'Rapport rejeté',
-                'data' => $rapport
-            ]);
+                'message' => 'Rapport rejeté'
+            ], 200);
 
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Erreur lors du rejet du rapport: ' . $e->getMessage()
+                'error' => 'Rapport introuvable'
+            ], 404);
+
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur rejet rapport:', [
+                'message' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Erreur lors du rejet'
             ], 500);
         }
     }
 
-    // Valider tous les rapports en attente
+    /**
+     * ✅✅ Valider tous les rapports en attente
+     */
     public function validerTousRapports()
     {
         try {
-            $rapportsValides = Rapport::where('statut', 'en_attente')
+            Log::info('=== VALIDATION TOUS RAPPORTS ===');
+
+            $updated = Rapport::where('statut', 'en_attente')
                 ->update([
                     'statut' => 'valide',
                     'date_validation' => now()
                 ]);
 
+            Log::info('✅ Rapports validés:', ['count' => $updated]);
+
             return response()->json([
                 'success' => true,
-                'message' => $rapportsValides . ' rapports validés avec succès',
-                'count' => $rapportsValides
-            ]);
+                'message' => "$updated rapport(s) validé(s) avec succès"
+            ], 200);
 
         } catch (\Exception $e) {
+            Log::error('❌ Erreur validation multiple:', [
+                'message' => $e->getMessage()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'error' => 'Erreur lors de la validation multiple: ' . $e->getMessage()
+                'error' => 'Erreur lors de la validation multiple'
             ], 500);
         }
     }
 
-    // Envoyer le rapport consolidé à l'administration
+    /**
+     * 📨 Envoyer le rapport consolidé à l'administration
+     */
     public function envoyerAAdministration(Request $request)
     {
         try {
+            Log::info('=== ENVOI À L\'ADMINISTRATION ===');
+            Log::info('Données:', $request->all());
+
             $validated = $request->validate([
+                'date_envoi' => 'required|string',
                 'rapports_inclus' => 'required|array',
                 'statistiques_consolidees' => 'required|array'
             ]);
 
             // Marquer les rapports comme envoyés à l'administration
-            $rapportsIds = collect($validated['rapports_inclus'])->pluck('id');
-            Rapport::whereIn('id', $rapportsIds)
-                ->update(['envoye_administration' => true, 'date_envoi_administration' => now()]);
+            $rapportIds = collect($validated['rapports_inclus'])->pluck('id')->filter();
+
+            if ($rapportIds->isNotEmpty()) {
+                Rapport::whereIn('id', $rapportIds)
+                    ->where('statut', 'valide')
+                    ->update([
+                        'envoye_administration' => true,
+                        'date_envoi_administration' => now()
+                    ]);
+            }
+
+            Log::info('✅ Rapport consolidé envoyé à administration', [
+                'nb_rapports' => count($validated['rapports_inclus'])
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Rapport consolidé envoyé à l\'administration avec succès',
-                'rapports_inclus' => count($validated['rapports_inclus']),
-                'statistiques' => $validated['statistiques_consolidees']
-            ]);
+                'data' => [
+                    'nb_rapports_envoyes' => count($validated['rapports_inclus']),
+                    'date_envoi' => now()->format('d/m/Y H:i')
+                ]
+            ], 200);
 
         } catch (\Exception $e) {
+            Log::error('❌ Erreur envoi administration:', [
+                'message' => $e->getMessage()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'error' => 'Erreur lors de l\'envoi à l\'administration: ' . $e->getMessage()
+                'error' => 'Erreur lors de l\'envoi à l\'administration',
+                'message' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Convertir le statut de la BDD au format frontend
+     */
+    private function mapStatut($statut)
+    {
+        $mapping = [
+            'brouillon' => 'Brouillon',
+            'en_attente' => 'En attente de validation',
+            'valide' => 'Validé',
+            'rejete' => 'Rejeté'
+        ];
+
+        return $mapping[$statut] ?? $statut;
+    }
+
+    /**
+     * Liste tous les rapports (pour apiResource)
+     */
+    public function index()
+    {
+        try {
+            $rapports = Rapport::with('user')->orderBy('created_at', 'desc')->get();
+            return response()->json(['success' => true, 'data' => $rapports], 200);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Afficher un rapport spécifique
+     */
+    public function show($id)
+    {
+        try {
+            $rapport = Rapport::with('user')->findOrFail($id);
+            return response()->json(['success' => true, 'data' => $rapport], 200);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => 'Rapport introuvable'], 404);
+        }
+    }
+
+    /**
+     * Créer un rapport
+     */
+    public function store(Request $request)
+    {
+        return $this->envoyerAuChefDepartement($request);
+    }
+
+    /**
+     * Mettre à jour un rapport
+     */
+    public function update(Request $request, $id)
+    {
+        try {
+            $rapport = Rapport::findOrFail($id);
+            $rapport->update($request->all());
+            return response()->json(['success' => true, 'data' => $rapport], 200);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Supprimer un rapport
+     */
+    public function destroy($id)
+    {
+        try {
+            $rapport = Rapport::findOrFail($id);
+            $rapport->delete();
+            return response()->json(['success' => true, 'message' => 'Rapport supprimé'], 200);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
     }
 }

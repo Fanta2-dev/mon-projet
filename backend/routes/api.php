@@ -2,6 +2,8 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Api\SeanceController;
@@ -53,36 +55,34 @@ Route::middleware([
     Route::get('/user', fn(Request $request) => $request->user());
 
     // ========================
-    // 📊 ROUTES RAPPORTS (Corrigées et déplacées ici)
+    // 📊 ROUTES RAPPORTS - ✅ ACCESSIBLES AUX RESPONSABLES MÉTIER ET CHEF DÉPARTEMENT
     // ========================
-    Route::middleware('role:responsable_metier,chef_departement,admin')->group(function () {
+    Route::prefix('rapports')->group(function () {
+        // 🔹 Envoyer un rapport au chef de département (Responsable Métier)
+        Route::post('/chef-departement', [RapportController::class, 'envoyerAuChefDepartement']);
 
-        // 🔹 ROUTES DE BASE POUR LES RAPPORTS (REST API)
-        Route::apiResource('rapports', RapportController::class);
+        // 🔹 Récupérer les rapports (Chef de Département)
+        Route::get('/chef-departement', [RapportController::class, 'getRapportsPourChefDepartement']);
 
-        // 🔹 ROUTES SPÉCIFIQUES POUR LE SYSTÈME DE RAPPORTS
-        Route::prefix('rapports')->group(function () {
-            // Route pour envoyer un rapport au chef de département
-            Route::post('/chef-departement', [RapportController::class, 'envoyerAuChefDepartement']);
+        // 🔹 Valider un rapport (Chef de Département)
+        Route::put('/{id}/valider', [RapportController::class, 'validerRapport']);
 
-            // Route pour récupérer les rapports reçus (pour le chef de département)
-            Route::get('/chef-departement', [RapportController::class, 'getRapportsPourChefDepartement']);
+        // 🔹 Rejeter un rapport (Chef de Département)
+        Route::put('/{id}/rejeter', [RapportController::class, 'rejeterRapport']);
 
-            // Route pour valider un rapport
-            Route::put('/{id}/valider', [RapportController::class, 'validerRapport']);
+        // 🔹 Valider tous les rapports (Chef de Département)
+        Route::put('/valider-tous', [RapportController::class, 'validerTousRapports']);
 
-            // Route pour rejeter un rapport
-            Route::put('/{id}/rejeter', [RapportController::class, 'rejeterRapport']);
-
-            // Route pour valider tous les rapports en attente
-            Route::put('/valider-tous', [RapportController::class, 'validerTousRapports']);
-
-            // Route pour envoyer à l'administration
-            Route::post('/administration', [RapportController::class, 'envoyerAAdministration']);
-        });
+        // 🔹 Envoyer à l'administration (Chef de Département)
+        Route::post('/administration', [RapportController::class, 'envoyerAAdministration']);
     });
 
-    // 🔥 CORRECTION AJOUTÉE : Routes justificatifs accessibles à tous les utilisateurs authentifiés
+    // 🔹 Routes CRUD de base pour les rapports (Admin uniquement)
+    Route::middleware('role:admin')->group(function () {
+        Route::apiResource('rapports', RapportController::class);
+    });
+
+    // 🔥 Routes justificatifs accessibles à tous les utilisateurs authentifiés
     Route::prefix('justificatifs')->group(function () {
         Route::get('/en-attente', [JustificatifController::class, 'justificatifsEnAttente']);
         Route::get('/{id}', [JustificatifController::class, 'show']);
@@ -102,12 +102,8 @@ Route::middleware([
     // ========================
     Route::middleware('role:apprenant')->group(function () {
         Route::get('/dashboard/apprenant/{metierSlug}/annee-{annee}', [DashboardController::class, 'apprenant']);
-
-        // ✅ CORRECTION: ROUTES UNIFIÉES POUR LE FRONTEND
         Route::get('/apprenant/seances', [SeanceController::class, 'mesSeances']);
         Route::get('/apprenant/justificatifs/mes-justificatifs', [JustificatifController::class, 'mesJustificatifs']);
-
-        // ✅ CORRECTION: Utiliser VideoConferenceController pour les cours en ligne
         Route::get('/apprenant/cours-en-ligne', [VideoConferenceController::class, 'mesCoursEnLigne']);
 
         // 📁 JUSTIFICATIFS - Apprenant
@@ -122,7 +118,7 @@ Route::middleware([
         Route::get('/devoirs/{devoirId}/ma-soumission', [DevoirController::class, 'maSoumission']);
         Route::post('/devoirs/{devoirId}/soumission', [DevoirController::class, 'soumettreDevoir']);
 
-        // ✅ AJOUT: ROUTES POUR LES ABSENCES DES APPRENANTS
+        // ABSENCES
         Route::get('/apprenant/absences', [ApprenantController::class, 'mesAbsences']);
         Route::post('/apprenant/absences/{absence}/justifier', [ApprenantController::class, 'deposerJustificatif']);
     });
@@ -134,21 +130,15 @@ Route::middleware([
         Route::get('/enseignant/devoirs', [DevoirController::class, 'mesDevoirs']);
         Route::post('/devoirs', [DevoirController::class, 'store']);
         Route::get('/devoirs/{devoirId}/soumissions', [DevoirController::class, 'getSoumissions']);
-
-        // ✅ CORRECTION: ROUTES MANQUANTES POUR LA CORRECTION DES DEVOIRS
         Route::post('/soumissions/{soumissionId}/feedback', [DevoirController::class, 'envoyerFeedback']);
-        Route::post('/soumissions/{soumissionId}/corriger', [DevoirController::class, 'envoyerFeedback']); // ✅ ALIAS
+        Route::post('/soumissions/{soumissionId}/corriger', [DevoirController::class, 'envoyerFeedback']);
 
         Route::get('/dashboard/enseignant', [DashboardController::class, 'enseignant']);
         Route::post('/seances', [SeanceController::class, 'store']);
         Route::post('/presences', [PresenceController::class, 'store']);
         Route::get('/seances/{seance}/apprenants', [PresenceController::class, 'getApprenantsForSeance']);
         Route::post('/seances/{seance}/presences/multiple', [PresenceController::class, 'storeMultiple']);
-
-        // ✅ AJOUT: Route pour notifier les absences
         Route::post('/seances/{seance}/notifier-absences', [SeanceController::class, 'notifierAbsences']);
-
-        // ✅ AJOUT: Route pour voir seulement le STATUT des justificatifs (pas les fichiers)
         Route::get('/enseignant/seances/{seanceId}/statut-absences', [PresenceController::class, 'statutAbsencesPourEnseignant']);
     });
 
@@ -162,8 +152,6 @@ Route::middleware([
             Route::get('/tous', [JustificatifController::class, 'tousJustificatifs']);
             Route::get('/seance/{seanceId}', [JustificatifController::class, 'index']);
             Route::put('/{id}/statut', [JustificatifController::class, 'updateStatut']);
-
-            // ✅ AJOUT: Route pour voir les détails complets des absences avec justificatifs
             Route::get('/seance/{seanceId}/absences-detail', [JustificatifController::class, 'absencesAvecJustificatifs']);
         });
 
@@ -175,8 +163,6 @@ Route::middleware([
             Route::get('/presences', [PresenceController::class, 'indexForCoordinateur']);
             Route::get('/coordinateur/presences', [PresenceController::class, 'indexForCoordinateur']);
             Route::get('/seances', [SeanceController::class, 'indexForCoordinateur']);
-
-            // ✅ AJOUT: Route pour les statistiques du dashboard coordinateur
             Route::get('/presences/stats-dashboard', [PresenceController::class, 'statsDashboard']);
         });
 
@@ -187,18 +173,16 @@ Route::middleware([
             Route::get('/metier/{metierId}/presences', [PresenceController::class, 'rapportParMetier']);
             Route::get('/metier/{metierId}/devoirs', [DevoirController::class, 'parMetier']);
 
-            // 📋 JUSTIFICATIFS SPÉCIFIQUES AU MÉTIER (avec paramètre année optionnel)
+            // 📋 JUSTIFICATIFS SPÉCIFIQUES AU MÉTIER
             Route::get('/metier/{metierId}/justificatifs', [JustificatifController::class, 'justificatifsParMetier']);
             Route::get('/metier/{metierId}/justificatifs/en-attente', [JustificatifController::class, 'justificatifsEnAttenteParMetier']);
             Route::put('/justificatifs/{id}/valider', [JustificatifController::class, 'valider']);
             Route::put('/justificatifs/{id}/rejeter', [JustificatifController::class, 'rejeter']);
 
-            // 🆕 ROUTES EXISTANTES POUR LE DASHBOARD
+            // ROUTES DASHBOARD RESPONSABLE MÉTIER
             Route::get('/apprenants/metier/{metierId}', [ApprenantController::class, 'parMetier']);
             Route::get('/uea/metier/{metierId}', [UeaController::class, 'parMetier']);
             Route::get('/stats/metier', [DashboardController::class, 'statsMetier']);
-
-            // ✅ NOUVELLES ROUTES AJOUTÉES (3 routes)
             Route::get('/dashboard/uea/metier/{metierId}', [DashboardController::class, 'ueaParMetier']);
             Route::get('/dashboard/apprenants/metier/{metierId}', [DashboardController::class, 'apprenantsParMetier']);
             Route::get('/dashboard/justificatifs/en-attente', [DashboardController::class, 'justificatifsEnAttente']);
@@ -213,7 +197,7 @@ Route::middleware([
     });
 
     // ========================
-    // ✅ ROUTE APPRENANTS (Multi-rôles) - AJOUT ICI
+    // ROUTE APPRENANTS (Multi-rôles)
     // ========================
     Route::middleware('role:enseignant,admin,chef_departement,coordinateur,responsable_metier')->group(function () {
         Route::get('/apprenants', [ApprenantController::class, 'index']);
@@ -251,11 +235,6 @@ if (app()->environment('local')) {
         return response()->json([
             'message' => 'API Rapports est fonctionnelle!',
             'routes_disponibles' => [
-                'GET /api/rapports' => 'Liste tous les rapports',
-                'POST /api/rapports' => 'Créer un rapport',
-                'GET /api/rapports/{id}' => 'Afficher un rapport',
-                'PUT /api/rapports/{id}' => 'Modifier un rapport',
-                'DELETE /api/rapports/{id}' => 'Supprimer un rapport',
                 'POST /api/rapports/chef-departement' => 'Envoyer au chef de département',
                 'GET /api/rapports/chef-departement' => 'Récupérer rapports pour chef département',
                 'PUT /api/rapports/{id}/valider' => 'Valider un rapport',
@@ -275,169 +254,91 @@ if (app()->environment('local')) {
         ]);
     })->middleware('auth:sanctum');
 
- // REMPLACEZ les anciennes routes par :
-Route::post('/rapports/chef-departement', [RapportChefDepartementController::class, 'envoyerRapport']);
-Route::get('/rapports/chef-departement', [RapportChefDepartementController::class, 'getRapports']);
+    // ✅ ROUTE DE TEST UNIFIÉE POUR L'ENVOI DE RAPPORT
+    Route::post('/test/rapport-envoi', function(Request $request) {
+        Log::info('=== TEST ENVOI RAPPORT RESPONSABLE METIER ===');
+        Log::info('Headers:', $request->headers->all());
+        Log::info('User:', Auth::user() ? ['id' => Auth::user()->id, 'name' => Auth::user()->name] : 'Non auth');
+        Log::info('Données reçues:', $request->all());
 
-// Route TEMPORAIRE pour tester l'envoi de rapport
-Route::post('/test/rapport-envoi', function(Request $request) {
-    \Illuminate\Support\Facades\Log::info('=== TEST ENVOI RAPPORT ===');
-    \Illuminate\Support\Facades\Log::info('Données reçues:', $request->all());
+        try {
+            $validated = $request->validate([
+                'titre' => 'required|string',
+                'contenu' => 'required|string',
+                'metier_id' => 'required',
+                'annee' => 'required|string',
+                'uea_nom' => 'required|string'
+            ]);
 
-    try {
-        $validated = $request->validate([
-            'titre' => 'required|string',
-            'contenu' => 'required|string',
-            'metier_id' => 'required',
-            'annee' => 'required|string',
-            'uea_nom' => 'required|string'
-        ]);
+            $rapport = \App\Models\Rapport::create([
+                'user_id' => Auth::id(),
+                'metier' => $validated['titre'],
+                'code_metier' => 'TEST-' . time(),
+                'statistiques' => $validated,
+                'periode' => 'Test ' . $validated['annee'],
+                'justificatifs_traites' => 0,
+                'statut' => 'en_attente',
+                'date_soumission' => now(),
+            ]);
 
-        $rapport = \App\Models\Rapport::create([
-            'user_id' => \Illuminate\Support\Facades\Auth::id(),
-            'metier' => $validated['titre'],
-            'code_metier' => 'CD-' . time(),
-            'statistiques' => $validated,
-            'periode' => 'Test ' . $validated['annee'],
-            'justificatifs_traites' => 0,
-            'statut' => 'valide',
-            'date_soumission' => now(),
-        ]);
+            Log::info('✅ Rapport test créé:', ['id' => $rapport->id]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Rapport créé avec succès!',
-            'rapport_id' => $rapport->id
-        ]);
+            return response()->json([
+                'success' => true,
+                'message' => 'Rapport test créé avec succès!',
+                'rapport_id' => $rapport->id,
+                'test' => true
+            ]);
 
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'error' => $e->getMessage()
-        ], 500);
-    }
-});
+        } catch (\Exception $e) {
+            Log::error('❌ Erreur route test:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
 
-// Route TEMPORAIRE pour récupérer les rapports
-Route::get('/test/rapports-chef', function() {
-    try {
-        $rapports = \App\Models\Rapport::with('user:id,name,email')
-            ->where('code_metier', 'like', 'CD-%')
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($rapport) {
-                return [
-                    'id' => $rapport->id,
-                    'metier' => $rapport->metier,
-                    'code_metier' => $rapport->code_metier,
-                    'coordinateur' => $rapport->user->name ?? 'Utilisateur inconnu',
-                    'date_soumission' => $rapport->date_soumission?->format('d/m/Y') ?? $rapport->created_at->format('d/m/Y'),
-                    'periode' => $rapport->periode,
-                    'statistiques' => is_array($rapport->statistiques) ? $rapport->statistiques : [],
-                    'justificatifs_traites' => $rapport->justificatifs_traites,
-                    'statut' => $rapport->statut
-                ];
-            });
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur test: ' . $e->getMessage(),
+                'test' => true
+            ], 500);
+        }
+    })->middleware('auth:sanctum');
 
-        return response()->json([
-            'success' => true,
-            'data' => $rapports
-        ]);
+    // ✅ ROUTE DE TEST UNIFIÉE POUR RÉCUPÉRER LES RAPPORTS
+    Route::get('/test/rapports-chef', function() {
+        try {
+            $rapports = \App\Models\Rapport::with('user:id,name,email')
+                ->where('code_metier', 'like', 'TEST-%')
+                ->orderBy('created_at', 'desc')
+                ->get()
+                ->map(function ($rapport) {
+                    return [
+                        'id' => $rapport->id,
+                        'titre' => $rapport->metier,
+                        'contenu' => is_array($rapport->statistiques) ? ($rapport->statistiques['contenu'] ?? '') : '',
+                        'uea_nom' => is_array($rapport->statistiques) ? ($rapport->statistiques['uea_nom'] ?? '') : '',
+                        'annee' => is_array($rapport->statistiques) ? ($rapport->statistiques['annee'] ?? '') : '',
+                        'metier_id' => is_array($rapport->statistiques) ? ($rapport->statistiques['metier_id'] ?? '') : '',
+                        'coordinateur' => $rapport->user->name ?? 'Utilisateur inconnu',
+                        'statut' => $rapport->statut,
+                        'date_soumission' => $rapport->date_soumission?->format('d/m/Y H:i') ?? $rapport->created_at->format('d/m/Y H:i'),
+                        'periode' => $rapport->periode,
+                    ];
+                });
 
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'error' => $e->getMessage()
-        ], 500);
-    }
-});
+            return response()->json([
+                'success' => true,
+                'data' => $rapports,
+                'test' => true
+            ]);
 
-
-// ROUTES DE TEST TEMPORAIRES
-Route::post('/test/rapport-envoi', function(Request $request) {
-    \Log::info('=== TEST ENVOI RAPPORT RESPONSABLE METIER ===');
-    \Log::info('Headers:', $request->headers->all());
-    \Log::info('User:', Auth::user() ? ['id' => Auth::user()->id, 'name' => Auth::user()->name] : 'Non auth');
-    \Log::info('Données reçues:', $request->all());
-
-    try {
-        $validated = $request->validate([
-            'titre' => 'required|string',
-            'contenu' => 'required|string',
-            'metier_id' => 'required',
-            'annee' => 'required|string',
-            'uea_nom' => 'required|string'
-        ]);
-
-        // Création simple du rapport
-        $rapport = \App\Models\Rapport::create([
-            'user_id' => Auth::id(),
-            'metier' => $validated['titre'],
-            'code_metier' => 'CD-' . time(),
-            'statistiques' => $validated,
-            'periode' => 'Test ' . $validated['annee'],
-            'justificatifs_traites' => 0,
-            'statut' => 'valide',
-            'date_soumission' => now(),
-        ]);
-
-        \Log::info('✅ Rapport test créé:', ['id' => $rapport->id]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Rapport test créé avec succès!',
-            'rapport_id' => $rapport->id,
-            'test' => true
-        ]);
-
-    } catch (\Exception $e) {
-        \Log::error('❌ Erreur route test:', [
-            'message' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ]);
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur test: ' . $e->getMessage(),
-            'test' => true
-        ], 500);
-    }
-});
-
-Route::get('/test/rapports-chef', function() {
-    try {
-        $rapports = \App\Models\Rapport::with('user:id,name,email')
-            ->where('code_metier', 'like', 'CD-%')
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($rapport) {
-                return [
-                    'id' => $rapport->id,
-                    'titre' => $rapport->metier,
-                    'contenu' => is_array($rapport->statistiques) ? ($rapport->statistiques['contenu'] ?? '') : '',
-                    'uea_nom' => is_array($rapport->statistiques) ? ($rapport->statistiques['uea_nom'] ?? '') : '',
-                    'annee' => is_array($rapport->statistiques) ? ($rapport->statistiques['annee'] ?? '') : '',
-                    'metier_id' => is_array($rapport->statistiques) ? ($rapport->statistiques['metier_id'] ?? '') : '',
-                    'coordinateur' => $rapport->user->name ?? 'Utilisateur inconnu',
-                    'statut' => $rapport->statut,
-                    'date_soumission' => $rapport->date_soumission?->format('d/m/Y H:i') ?? $rapport->created_at->format('d/m/Y H:i'),
-                    'periode' => $rapport->periode,
-                ];
-            });
-
-        return response()->json([
-            'success' => true,
-            'data' => $rapports,
-            'test' => true
-        ]);
-
-    } catch (\Exception $e) {
-        \Log::error('Erreur récupération rapports test: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'error' => 'Erreur test: ' . $e->getMessage(),
-            'test' => true
-        ], 500);
-    }
-});
+        } catch (\Exception $e) {
+            Log::error('Erreur récupération rapports test: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Erreur test: ' . $e->getMessage(),
+                'test' => true
+            ], 500);
+        }
+    });
 }

@@ -10,6 +10,7 @@ use App\Models\Presence;
 use App\Models\Seance;
 use App\Models\Metier;
 use App\Models\Justificatif;
+use App\Models\Rapport;
 
 class StatsOverview extends BaseWidget
 {
@@ -78,6 +79,40 @@ class StatsOverview extends BaseWidget
                 ->color('gray')
                 ->extraAttributes([
                     'class' => 'cursor-pointer rounded-2xl shadow-lg border-l-4 border-l-gray-500 bg-gradient-to-r from-gray-50 to-white dark:from-gray-900/20 dark:to-gray-900'
+                ]),
+
+            // 📋 SECTION RAPPORTS - Nouvelle section
+            Stat::make('📋 Rapports', Rapport::count())
+                ->description('Total • ' . $this->getTauxValidationRapports() . '% validés')
+                ->descriptionIcon('heroicon-o-document-chart-bar')
+                ->color('purple')
+                ->chart($this->getRapportsTrend())
+                ->extraAttributes([
+                    'class' => 'cursor-pointer rounded-2xl shadow-lg border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-900'
+                ]),
+
+            Stat::make('⏳ Rapports en Attente', Rapport::where('statut', 'en_attente')->count())
+                ->description('En attente de validation')
+                ->descriptionIcon('heroicon-o-clock')
+                ->color('orange')
+                ->extraAttributes([
+                    'class' => 'cursor-pointer rounded-2xl shadow-lg border-l-4 border-l-orange-500 bg-gradient-to-r from-orange-50 to-white dark:from-orange-900/20 dark:to-gray-900'
+                ]),
+
+            Stat::make('✅ Rapports Validés', Rapport::where('statut', 'valide')->count())
+                ->description('Approuvés • ' . $this->getTauxRapportsValides() . '% du total')
+                ->descriptionIcon('heroicon-o-check-badge')
+                ->color('green')
+                ->extraAttributes([
+                    'class' => 'cursor-pointer rounded-2xl shadow-lg border-l-4 border-l-green-500 bg-gradient-to-r from-green-50 to-white dark:from-green-900/20 dark:to-gray-900'
+                ]),
+
+            Stat::make('📤 Rapports Envoyés', Rapport::where('envoye_administration', true)->count())
+                ->description('Transmis à l\'administration')
+                ->descriptionIcon('heroicon-o-paper-airplane')
+                ->color('blue')
+                ->extraAttributes([
+                    'class' => 'cursor-pointer rounded-2xl shadow-lg border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50 to-white dark:from-blue-900/20 dark:to-gray-900'
                 ]),
 
             // 🎯 SECTION MÉTIERS - Design élégant
@@ -215,6 +250,23 @@ class StatsOverview extends BaseWidget
         return $total > 0 ? round(($rejetes / $total) * 100, 1) : 0;
     }
 
+    // 📈 NOUVELLES MÉTHODES POUR LES RAPPORTS
+    protected function getTauxValidationRapports(): float
+    {
+        $total = Rapport::count();
+        $valides = Rapport::where('statut', 'valide')->count();
+
+        return $total > 0 ? round(($valides / $total) * 100, 1) : 0;
+    }
+
+    protected function getTauxRapportsValides(): float
+    {
+        $total = Rapport::count();
+        $valides = Rapport::where('statut', 'valide')->count();
+
+        return $total > 0 ? round(($valides / $total) * 100, 1) : 0;
+    }
+
     protected function getProchainesSeances(): int
     {
         return 3;
@@ -240,6 +292,11 @@ class StatsOverview extends BaseWidget
     protected function getJustificatifsTrend(): array
     {
         return [5, 6, 8, 7, 9, 10, 12, 11, 13, 14, 15, 16];
+    }
+
+    protected function getRapportsTrend(): array
+    {
+        return [2, 3, 5, 7, 8, 10, 12, 15, 18, 20, 22, 25];
     }
 
     protected function getColumns(): int

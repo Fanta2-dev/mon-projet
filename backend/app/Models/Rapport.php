@@ -4,13 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Rapport extends Model
 {
     use HasFactory;
 
-     protected $fillable = [
+    protected $table = 'rapports';
+
+    protected $fillable = [
         'user_id',
         'metier',
         'code_metier',
@@ -25,42 +26,61 @@ class Rapport extends Model
         'date_envoi_administration'
     ];
 
-
-     protected $casts = [
+    protected $casts = [
         'statistiques' => 'array',
         'date_soumission' => 'datetime',
         'date_validation' => 'datetime',
         'date_rejet' => 'datetime',
         'date_envoi_administration' => 'datetime',
-        'envoye_administration' => 'boolean'
+        'envoye_administration' => 'boolean',
+        'justificatifs_traites' => 'integer'
     ];
 
-     public function user(): BelongsTo
+    /**
+     * Relation avec l'utilisateur qui a créé le rapport
+     */
+    public function user()
     {
         return $this->belongsTo(User::class);
     }
 
-     public function getCoordinateurAttribute(): string
-    {
-        return $this->user->name ?? 'Utilisateur inconnu';
-    }
-     public function getCoordinateurEmailAttribute(): string
-    {
-        return $this->user->email ?? 'Email inconnu';
-    }
-
+    /**
+     * Scope pour les rapports en attente
+     */
     public function scopeEnAttente($query)
     {
         return $query->where('statut', 'en_attente');
     }
 
+    /**
+     * Scope pour les rapports validés
+     */
     public function scopeValides($query)
     {
         return $query->where('statut', 'valide');
     }
 
-    public function scopeRejetes($query)
+    /**
+     * Scope pour les rapports non envoyés à l'administration
+     */
+    public function scopeNonEnvoyes($query)
     {
-        return $query->where('statut', 'rejete');
+        return $query->where('envoye_administration', false);
+    }
+
+    /**
+     * Vérifier si le rapport est validé
+     */
+    public function estValide()
+    {
+        return $this->statut === 'valide';
+    }
+
+    /**
+     * Vérifier si le rapport est en attente
+     */
+    public function estEnAttente()
+    {
+        return $this->statut === 'en_attente';
     }
 }
