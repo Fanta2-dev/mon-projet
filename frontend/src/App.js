@@ -30,6 +30,12 @@ function App() {
   return (
     <Router>
       <Routes>
+         {/* <Route 
+          path="/admin/*" 
+          element={
+            window.location.href = 'http://localhost:8000/binta'
+          } 
+        /> */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

@@ -166,9 +166,10 @@ function DashboardEnseignant() {
         
         return {
           ...devoir,
-          // Utiliser les champs directement du backend
-          metier: devoir.metier || 'Non spécifié',
-          annee: devoir.annee || '?',
+          // ✅ CORRECTION : Extraire les valeurs textuelles pour éviter l'erreur React
+          metier: typeof devoir.metier === 'object' ? devoir.metier.nom || devoir.metier.value || devoir.metier : devoir.metier || 'Non spécifié',
+          annee: typeof devoir.annee === 'object' ? devoir.annee.value || devoir.annee : devoir.annee || '?',
+          uea_nom: typeof devoir.uea_nom === 'object' ? devoir.uea_nom.nom || devoir.uea_nom : devoir.uea_nom || devoir.uea?.nom || 'N/A',
           // S'assurer que le fichier est détecté correctement
           hasFile: !!devoir.fichier_consigne
         };
@@ -829,13 +830,16 @@ function DashboardEnseignant() {
                                 {/* ✅ CORRECTION : Afficher l'icône fichier basé sur fichier_consigne */}
                                 {d.fichier_consigne && <span className="ms-1">📎</span>}
                               </td>
-                              <td className="text-muted">{d.uea_nom || d.uea?.nom || 'N/A'}</td>
+                              <td className="text-muted">
+                                {/* ✅ CORRECTION : Gérer uea_nom qui pourrait être un objet */}
+                                {d.uea_nom}
+                              </td>
                               <td>
-                                {/* ✅ CORRECTION : Utiliser directement d.metier */}
+                                {/* ✅ CORRECTION : Utiliser directement d.metier (déjà formaté dans fetchDevoirs) */}
                                 <span className="badge bg-info">{d.metier}</span>
                               </td>
                               <td>
-                                {/* ✅ CORRECTION : Utiliser directement d.annee */}
+                                {/* ✅ CORRECTION : Utiliser directement d.annee (déjà formaté dans fetchDevoirs) */}
                                 <span className="badge bg-secondary">Année {d.annee}</span>
                               </td>
                               <td>

@@ -1,28 +1,36 @@
 // src/pages/LoginPage.jsx
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // ✅ Ajouter cette importation
-import axios from 'axios';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 function LoginPage() {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate(); // ✅ Ajouter le hook navigate
+  const [serverPort, setServerPort] = useState(8000);
+  const navigate = useNavigate();
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  // ✅ Fonction pour convertir metier_id en nom de métier
-  const getMetierName = (metierId) => {
-    const metiers = {
-      1: 'dwm',    // ← DWM
-      2: 'rt',     // ← RT  
-      3: 'asri',   // ← ASRI
-      // Ajoutez ici tous vos métiers avec leurs IDs
+  // Tester plusieurs ports au chargement
+  useEffect(() => {
+    const testPorts = async () => {
+      const ports = [8000, 8001, 8002, 8003];
+      for (const port of ports) {
+        try {
+          console.log(`Test du port ${port}...`);
+          const response = await fetch(`http://127.0.0.1:${port}`, {
+            method: 'HEAD',
+            mode: 'no-cors',
+          });
+          console.log(`✅ Port ${port} disponible`);
+          setServerPort(port);
+          return;
+        } catch (err) {
+          console.log(`❌ Port ${port} non disponible`);
+        }
+      }
+      console.log('Aucun port trouvé');
     };
-    return metiers[metierId] || 'informatique'; // Fallback si ID non trouvé
-  };
+    testPorts();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,137 +38,149 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      // 1. CSRF
-      await axios.get('http://localhost:8000/sanctum/csrf-cookie', { withCredentials: true });
+      console.log(`Tentative sur le port ${serverPort}...`);
 
-      // 2. Login
-      const res = await axios.post('http://localhost:8000/api/login', formData, { withCredentials: true });
-      const { user, token } = res.data;
+      // Essayer sans CSRF d'abord (simplifié)
+      const response = await fetch(`http://127.0.0.1:${serverPort}/api/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
 
-      // 3. Vérifications strictes
-      if (!token || !user || !user.role) {
-        throw new Error("Données d'authentification manquantes ou invalides");
+      const data = await response.json();
+      console.log('Réponse:', data);
+
+      if (!response.ok) {
+        throw new Error(data.message || `Erreur ${response.status}`);
       }
 
-      // ✅ CORRECTION : Vérifier metier_id au lieu de metier
-      if (user.role === 'apprenant' && (!user.metier_id || !user.annee)) {
-        throw new Error("Données utilisateur incomplètes : métier ou année manquant");
+      // Connexion réussie
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
+      // Redirection
+      if (data.user.role === 'enseignant' || data.user.role === 'responsable_metier') {
+        navigate('/dashboard/enseignant');
+      } else if (data.user.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/');
       }
-
-      // 4. Sauvegarde
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-
-      // 5. Redirection sécurisée - ✅ CORRECTION ICI
-      let redirectPath = '/';
-
-      if (user.role === 'apprenant') {
-        // ✅ CORRECTION : Utiliser metier_id pour obtenir le nom du métier
-        const metierName = getMetierName(user.metier_id);
-        const metierSlug = metierName.toLowerCase().replace(/\s+/g, '-');
-        
-        if (!metierSlug) throw new Error("Métier invalide");
-        redirectPath = `/dashboard/apprenant/${metierSlug}/annee-${user.annee}`;
-        // redirectPath = `/dashboard/apprenant/${metierSlug}/annee-${user.annee}?metier_id=${user.metier_id}&annee=${user.annee}`;
-      } else if (user.role === 'enseignant') {
-        redirectPath = '/dashboard/enseignant';
-      } else if (user.role === 'coordinateur') {
-        redirectPath = '/dashboard/coordinateur';
-      } else if (user.role === 'chef_departement') {
-        redirectPath = '/dashboard/chef';
-      } else if (user.role === 'admin') {
-        redirectPath = '/admin';
-      }else if (user.role === 'responsable_metier') { // ✅ NOUVEAU CAS
-  redirectPath = '/dashboard/enseignant'; // Il verra le bouton spécial
-}
-
-      // console.log('Redirection vers:', redirectPath);
-      //  // Pour debug
-      console.log('🎯 Redirection vers:', redirectPath, '| Rôle:', user.role);
-      
-      // ✅ CORRECTION : Utiliser navigate au lieu de window.location.href
-      navigate(redirectPath, { replace: true });
 
     } catch (err) {
-      console.error("Erreur de connexion détaillée:", err);
+      console.error('Erreur complète:', err);
       
-      // Gestion d'erreur améliorée
-      if (err.response?.status === 401) {
-        setError("Email ou mot de passe incorrect");
-      } else if (err.response?.status === 403) {
-        setError("Compte en attente de validation par l'administrateur");
+      if (err.message.includes('Failed to fetch')) {
+        setError(`
+          🌐 Serveur Laravel introuvable !
+          
+          Démarrer Laravel avec :
+          1. Ouvrez un terminal dans "mon-projet/backend"
+          2. Exécutez : php artisan serve --host=127.0.0.1 --port=${serverPort}
+          3. Attendez "Laravel development server started"
+          4. Rafraîchissez cette page
+          
+          Port actuel testé : ${serverPort}
+        `);
       } else {
-        setError(err.message || "Identifiants incorrects");
+        setError(err.message);
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const inputStyle = {
-    display: 'block',
-    width: '100%',
-    padding: '10px',
-    margin: '10px 0',
-    border: '1px solid #ccc',
-    borderRadius: '4px',
-    fontSize: '14px',
-    backgroundColor: 'white'
-  };
-
-  const buttonStyle = {
-    width: '100%',
-    padding: '12px',
-    backgroundColor: '#007bff',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    fontSize: '16px',
-    cursor: 'pointer',
-    marginTop: '15px',
-    fontWeight: '600'
-  };
-
   return (
-    <div style={{ maxWidth: '400px', margin: '40px auto', padding: '20px', border: '1px solid #ddd', borderRadius: '8px' }}>
-      <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>🔐 Connexion</h2>
+    <div style={{ maxWidth: '400px', margin: '50px auto', padding: '25px' }}>
+      <h2 style={{ textAlign: 'center', color: '#333' }}>🔐 Connexion</h2>
+      
+      <div style={{ 
+        background: '#e8f4fd', 
+        padding: '10px', 
+        borderRadius: '5px',
+        marginBottom: '20px',
+        textAlign: 'center'
+      }}>
+        <strong>Port testé : {serverPort}</strong>
+      </div>
 
       {error && (
-        <div style={{
-          color: '#721c24',
-          backgroundColor: '#f8d7da',
-          padding: '10px',
-          borderRadius: '4px',
-          border: '1px solid #f5c6cb',
-          marginBottom: '15px'
+        <div style={{ 
+          background: '#ffe6e6', 
+          padding: '15px', 
+          borderRadius: '5px',
+          marginBottom: '20px',
+          color: '#cc0000',
+          whiteSpace: 'pre-line'
         }}>
           {error}
+          <div style={{ marginTop: '10px' }}>
+            <button 
+              onClick={() => window.location.reload()}
+              style={{
+                padding: '8px 15px',
+                background: '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              🔄 Rafraîchir
+            </button>
+          </div>
         </div>
       )}
 
       <form onSubmit={handleSubmit}>
-        <input 
-          name="email" 
-          type="email" 
-          placeholder="Email" 
-          value={formData.email} 
-          onChange={handleChange} 
-          required 
-          disabled={loading} 
-          style={inputStyle} 
+        <input
+          type="email"
+          placeholder="enseignant1@isep.sn"
+          value={formData.email}
+          onChange={(e) => setFormData({...formData, email: e.target.value})}
+          required
+          style={{ 
+            width: '100%', 
+            padding: '12px', 
+            margin: '10px 0',
+            border: '1px solid #ddd',
+            borderRadius: '4px'
+          }}
         />
-        <input 
-          name="password" 
-          type="password" 
-          placeholder="Mot de passe" 
-          value={formData.password} 
-          onChange={handleChange} 
-          required 
-          disabled={loading} 
-          style={inputStyle} 
+        
+        <input
+          type="password"
+          placeholder="Mot de passe"
+          value={formData.password}
+          onChange={(e) => setFormData({...formData, password: e.target.value})}
+          required
+          style={{ 
+            width: '100%', 
+            padding: '12px', 
+            margin: '10px 0',
+            border: '1px solid #ddd',
+            borderRadius: '4px'
+          }}
         />
-        <button type="submit" style={buttonStyle} disabled={loading}>
-          {loading ? 'Connexion en cours...' : 'Se connecter'}
+        
+        <button 
+          type="submit" 
+          disabled={loading}
+          style={{ 
+            width: '100%', 
+            padding: '14px', 
+            background: loading ? '#6c757d' : '#007bff', 
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            fontSize: '16px',
+            cursor: loading ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {loading ? '⏳ Connexion...' : 'Se connecter'}
         </button>
       </form>
     </div>

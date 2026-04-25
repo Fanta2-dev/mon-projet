@@ -1,56 +1,24 @@
 <?php
 
+use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Auth;
-use App\Models\User;
-
-/*
-|--------------------------------------------------------------------------
-| Web Routes
-|--------------------------------------------------------------------------
-|
-| Here is where you can register web routes for your application. These
-| routes are loaded by the RouteServiceProvider within a group which
-| contains the "web" middleware group. Now create something great!
-|
-*/
+use Inertia\Inertia;
 
 Route::get('/', function () {
-    return ['Laravel' => app()->version()];
+    return Inertia::render('Welcome', [
+        'canLogin' => Route::has('login'),
+        'canRegister' => Route::has('register'),
+        'laravelVersion' => Application::VERSION,
+        'phpVersion' => PHP_VERSION,
+    ]);
 });
 
-
-// 🔥 Route de connexion automatique pour binta
-Route::get('/login-binta', function () {
-    $user = User::where('email', 'bintadjenga1@gmail.com')->first();
-
-    if ($user) {
-        Auth::login($user);
-        return redirect('/binta');
-    }
-
-    return 'Utilisateur binta non trouvé';
+Route::middleware([
+    'auth:sanctum',
+    config('jetstream.auth_session'),
+    'verified',
+])->group(function () {
+    Route::get('/dashboard', function () {
+        return Inertia::render('Dashboard');
+    })->name('dashboard');
 });
-
-// 🔥 Route de test simple (sans Filament)
-Route::get('/binta-test', function () {
-    if (Auth::check()) {
-        return "
-            <h1>Bienvenue " . Auth::user()->name . " !</h1>
-            <p>Email: " . Auth::user()->email . "</p>
-            <p>Rôle: " . Auth::user()->role . "</p>
-            <p>Vous êtes connecté avec succès.</p>
-            <a href='/binta' style='padding: 10px; background: blue; color: white; text-decoration: none;'>
-                📊 Accéder à Filament Admin
-            </a>
-        ";
-    }
-    return redirect('/login-binta');
-});
-
-Route::get('/auth/google', [App\Http\Controllers\Auth\GoogleOAuthController::class, 'redirect'])->name('google.redirect');
-Route::get('/auth/google/callback', [App\Http\Controllers\Auth\GoogleOAuthController::class, 'callback']);
-
-
-
-require __DIR__.'/auth.php';
