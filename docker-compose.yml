@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: laravel_db
       POSTGRES_USER: laravel_user
-      POSTGRES_PASSWORD: laravel_pass
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5434:5432"
     volumes:
