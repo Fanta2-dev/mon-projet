@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use App\Models\Metier;
 
 // ✅ Importation des Pages
 use App\Filament\Resources\EnseignantResource\Pages;

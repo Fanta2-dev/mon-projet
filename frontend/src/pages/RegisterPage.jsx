@@ -1,8 +1,9 @@
-// src/pages/RegisterPage.js
-import React, { useState } from 'react';
+// src/pages/RegisterPage.jsx
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 function RegisterPage() {
+  const [metiers, setMetiers] = useState([]);
   const [form, setForm] = useState({
     name: '',
     prenom: '',
@@ -16,6 +17,13 @@ function RegisterPage() {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // ✅ Charge les métiers dynamiquement depuis l'API
+  useEffect(() => {
+    axios.get('http://localhost:8000/api/metiers', { withCredentials: true })
+      .then(res => setMetiers(res.data))
+      .catch(err => console.error('Erreur chargement métiers:', err));
+  }, []);
+
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
@@ -26,10 +34,8 @@ function RegisterPage() {
     setSuccess('');
     setLoading(true);
 
-    // 🔍 Nettoie les champs sensibles
     const trimmedEmail = form.email.trim();
 
-    // 🚫 Validation côté client
     if (!form.name || !form.prenom || !trimmedEmail || !form.metier_id || !form.annee) {
       setError("Veuillez remplir tous les champs.");
       setLoading(false);
@@ -49,7 +55,6 @@ function RegisterPage() {
     }
 
     try {
-      // 🔐 Nettoie le localStorage
       localStorage.clear();
 
       // 🍪 1. Récupère le cookie CSRF
@@ -59,11 +64,13 @@ function RegisterPage() {
 
       console.log('✅ Cookie CSRF récupéré');
 
-      // 📤 2. Envoie la requête avec le rôle fixe (pas dans le state)
+      // 📤 2. Envoie la requête d'inscription
       const payload = {
         ...form,
         email: trimmedEmail,
-        role: 'apprenant', // ✅ Forcé ici, pas exposé à l’utilisateur
+        metier_id: parseInt(form.metier_id), // ✅ Convertit en entier
+        annee: parseInt(form.annee),          // ✅ Convertit en entier
+        role: 'apprenant',
       };
 
       const res = await axios.post('http://localhost:8000/api/register', payload, {
@@ -76,14 +83,11 @@ function RegisterPage() {
         throw new Error("Données manquantes : token ou utilisateur non reçu");
       }
 
-      // 💾 Sauvegarde
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
 
-      // ✅ Succès
-      setSuccess(`✅ Bienvenue, ${user.name} !`);
+      setSuccess(`✅ Bienvenue, ${user.name} ! Votre compte est en attente de validation.`);
 
-      // 🔁 Redirige vers login après 1.5s
       setTimeout(() => {
         window.location.href = '/login';
       }, 1500);
@@ -91,7 +95,6 @@ function RegisterPage() {
     } catch (err) {
       console.error("Erreur d'inscription :", err);
 
-      // Gestion fine des erreurs
       const message =
         err.response?.data?.message ||
         Object.values(err.response?.data?.errors || {})
@@ -107,7 +110,7 @@ function RegisterPage() {
 
   return (
     <div style={{ maxWidth: '400px', margin: '40px auto', padding: '20px', border: '1px solid #ddd', borderRadius: '8px' }}>
-      <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>📝 Inscription Apprenant</h2>
+      <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>Inscription Apprenant</h2>
 
       {error && (
         <div style={{
@@ -138,7 +141,7 @@ function RegisterPage() {
       <form onSubmit={handleSubmit}>
         <input
           name="name"
-          placeholder="Nom complet"
+          placeholder="Nom"
           value={form.name}
           onChange={handleChange}
           required
@@ -189,18 +192,23 @@ function RegisterPage() {
           style={inputStyle}
         />
 
+        {/* ✅ Métiers chargés dynamiquement depuis la base */}
         <select
           name="metier_id"
           value={form.metier_id}
           onChange={handleChange}
           required
-          disabled={loading}
+          disabled={loading || metiers.length === 0}
           style={inputStyle}
         >
-          <option value="">Sélectionner un métier</option>
-          <option value="1">Développement Web & Mobile</option>
-          <option value="2">Réseaux & Télécom</option>
-          <option value="3">Administration Système & Réseau</option>
+          <option value="">
+            {metiers.length === 0 ? 'Chargement des métiers...' : 'Sélectionner un métier'}
+          </option>
+          {metiers.map(metier => (
+            <option key={metier.id} value={metier.id}>
+              {metier.nom}
+            </option>
+          ))}
         </select>
 
         <select
@@ -217,14 +225,13 @@ function RegisterPage() {
         </select>
 
         <button type="submit" style={buttonStyle} disabled={loading}>
-          {loading ? 'Inscription en cours...' : 'S\'inscrire'}
+          {loading ? 'Inscription en cours...' : "S'inscrire"}
         </button>
       </form>
     </div>
   );
 }
 
-// Styles
 const inputStyle = {
   display: 'block',
   width: '100%',
